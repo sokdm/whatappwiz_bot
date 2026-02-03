@@ -4,9 +4,10 @@
   "type": "module",
   "dependencies": {
     "@whiskeysockets/baileys": "^7.0.0-rc.9",
-    "axios": "^1.5.0",
-    "pino": "^8.13.0",
-    "qrcode-terminal": "^0.12.0",
-    "node-fetch": "^3.3.2"
+    "axios": "^1.13.4",
+    "express": "^5.2.1",
+    "node-fetch": "^3.3.2",
+    "pino": "^8.21.0",
+    "qrcode-terminal": "^0.12.0"
   }
 }

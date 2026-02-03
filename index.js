@@ -26,16 +26,13 @@ app.listen(PORT, () => {
 // ================= BASIC SETUP =================
 const logger = P({ level: "silent" });
 
-if (!fs.existsSync("./downloads")) {
-  fs.mkdirSync("./downloads");
-}
+if (!fs.existsSync("./downloads")) fs.mkdirSync("./downloads");
 
 let sock;
 
 // ================= SMART DM REPLIES =================
 function smartReply(text) {
   const t = text.toLowerCase();
-
   if (["hi", "hello", "hey", "afa"].includes(t)) {
     const replies = [
       "Hey 👋 How are you?",
@@ -45,11 +42,9 @@ function smartReply(text) {
     ];
     return replies[Math.floor(Math.random() * replies.length)];
   }
-
   if (t.includes("help")) {
     return "🤖 I’m Mr Wisdom’s bot.\nSend *menu* in a group to see commands.";
   }
-
   return "🤖 Hello! This is Mr Wisdom’s bot.\nYour message has been received ✅";
 }
 
@@ -58,49 +53,36 @@ async function startSock() {
   const { state, saveCreds } = await useMultiFileAuthState("auth_info");
   const { version } = await fetchLatestBaileysVersion();
 
-  sock = makeWASocket({
-    auth: state,
-    version,
-    logger
-  });
-
+  sock = makeWASocket({ auth: state, version, logger });
   sock.ev.on("creds.update", saveCreds);
 
   sock.ev.on("connection.update", ({ connection, lastDisconnect, qr }) => {
     if (qr) qrcode.generate(qr, { small: true });
-
-    if (connection === "open") {
-      console.log("✅ Bot connected successfully!");
-    }
-
+    if (connection === "open") console.log("✅ Bot connected successfully!");
     if (connection === "close") {
       const reason = lastDisconnect?.error?.output?.statusCode;
-      console.log("❌ Disconnected. Reconnecting...");
-      setTimeout(startSock, 5000);
+      if (reason !== DisconnectReason.loggedOut) {
+        console.log("⚠️ Bot disconnected, reconnecting silently...");
+        startSock(); // auto-reconnect
+      } else console.log("❌ Logged out. Scan QR again.");
     }
   });
 
   // ================= MESSAGE HANDLER =================
   sock.ev.on("messages.upsert", async ({ messages, type }) => {
     if (type !== "notify") return;
-
     const msg = messages[0];
     if (!msg.message || msg.key.fromMe) return;
 
     const sender = msg.key.remoteJid;
     const isGroup = sender.endsWith("@g.us");
-
     const text =
-      msg.message.conversation ||
-      msg.message.extendedTextMessage?.text ||
-      "";
-
+      msg.message.conversation || msg.message.extendedTextMessage?.text || "";
     const body = text.trim().toLowerCase();
 
     // ================= DM HANDLER =================
     if (!isGroup) {
-      const reply = smartReply(body);
-      await sock.sendMessage(sender, { text: reply });
+      await sock.sendMessage(sender, { text: smartReply(body) });
       return;
     }
 
@@ -118,7 +100,6 @@ async function startSock() {
     const admins = groupMetadata.participants
       .filter(p => p.admin)
       .map(p => p.id);
-
     const isAdmin = admins.includes(senderId);
 
     // ===== ADMIN CHECK =====
@@ -133,14 +114,13 @@ async function startSock() {
     if (body === ".menu") {
       await sock.sendMessage(sender, {
         text:
-`🤖 *Mr Wisdom Bot Menu*
-
-.admin commands only
+`🤖 *Mr Wisdom Bot Menu* (Admin Only)
 
 .tagall – Tag all members
 .info – Group info
 .rules – Group rules
 .save <link> – Save media
+.kick @member – Kick a member
 
 ✨ Powered by Mr Wisdom`
       });
@@ -149,11 +129,7 @@ async function startSock() {
     // ===== TAGALL =====
     if (body === ".tagall") {
       const members = groupMetadata.participants.map(p => p.id);
-
-      const tagText = members
-        .map(m => `💠@${m.split("@")[0]}`)
-        .join("\n");
-
+      const tagText = members.map(m => `💠@${m.split("@")[0]}`).join("\n");
       await sock.sendMessage(sender, {
         text:
 `📢 *Attention Everyone!*
@@ -201,20 +177,35 @@ ${tagText}`,
         });
         return;
       }
-
       try {
         const filename = `./downloads/${Date.now()}.mp4`;
         const res = await axios.get(url, { responseType: "arraybuffer" });
         fs.writeFileSync(filename, res.data);
-
         await sock.sendMessage(sender, {
           video: fs.readFileSync(filename),
           caption: "✅ Media saved successfully"
         });
       } catch {
+        await sock.sendMessage(sender, { text: "❌ Failed to download media" });
+      }
+    }
+
+    // ===== KICK =====
+    if (body.startsWith(".kick")) {
+      if (!msg.message.extendedTextMessage?.contextInfo?.mentionedJid) {
         await sock.sendMessage(sender, {
-          text: "❌ Failed to download media"
+          text: "❌ Usage: .kick @member"
         });
+        return;
+      }
+
+      const mentions = msg.message.extendedTextMessage.contextInfo.mentionedJid;
+      for (let m of mentions) {
+        try {
+          await sock.groupRemove(sender, [m]);
+        } catch {
+          await sock.sendMessage(sender, { text: `❌ Failed to kick ${m}` });
+        }
       }
     }
   });

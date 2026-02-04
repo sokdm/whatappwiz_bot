@@ -27,3 +27,6 @@
   },
   "homepage": "https://github.com/sokdm/whatappwiz_bot"
 }
+"scripts": {
+  "start": "node index.js"
+}

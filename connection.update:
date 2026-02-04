@@ -1,0 +1,15 @@
+sock.ev.on('connection.update', (update) => {
+    const { connection, lastDisconnect, qr } = update;
+
+    if (qr) {
+        console.log("📲 Scan this QR code with your phone:");
+        console.log(qr); // This prints the raw QR code string in terminal
+    }
+
+    if (connection === 'close') {
+        const reason = lastDisconnect.error?.output?.statusCode;
+        console.log('Disconnected', reason);
+    } else if (connection === 'open') {
+        console.log("✅ Bot connected successfully!");
+    }
+});

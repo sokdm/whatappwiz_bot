@@ -1,7 +1,7 @@
-import { default: makeWASocket, useMultiFileAuthState, jidNormalizedUser, DisconnectReason, delay } from "@adiwajshing/baileys";
+import { default as makeWASocket, useMultiFileAuthState, jidNormalizedUser, DisconnectReason, delay } from "@adiwajshing/baileys";
 import Pino from "pino";
 
-// Load auth state
+// Load auth state (session folder)
 const { state, saveCreds } = await useMultiFileAuthState("./auth_info");
 
 let sock = makeWASocket({
@@ -9,22 +9,28 @@ let sock = makeWASocket({
     logger: Pino({ level: "warn" })
 });
 
+// Save credentials
 sock.ev.on('creds.update', saveCreds);
 
 // Auto-reconnect
 sock.ev.on('connection.update', async (update) => {
-    const { connection, lastDisconnect } = update;
-    if(connection === "close") {
-        const reason = lastDisconnect.error?.output?.statusCode;
+    const { connection, lastDisconnect, qr } = update;
+
+    if(qr){
+        console.log("🔗 New QR received, scan to login");
+    }
+
+    if(connection === "close"){
+        const reason = lastDisconnect?.error?.output?.statusCode;
         console.log("Disconnected:", reason);
         if(reason !== DisconnectReason.loggedOut){
             console.log("Reconnecting...");
             sock = makeWASocket({ auth: state, logger: Pino({ level: "warn" }) });
             sock.ev.on('creds.update', saveCreds);
         } else {
-            console.log("Logged out, need QR scan!");
+            console.log("❌ Logged out, need to scan QR");
         }
-    } else if(connection === "open") {
+    } else if(connection === "open"){
         console.log("✅ Bot connected successfully!");
     }
 });

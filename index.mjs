@@ -4,15 +4,23 @@ import makeWASocket, {
   useMultiFileAuthState,
   jidNormalizedUser
 } from "@whiskeysockets/baileys";
-
 import Pino from "pino";
 import qrcode from "qrcode-terminal";
+import fs from "fs";
 
 // ===== CONFIG =====
 const forbiddenWords = ["badword1", "badword2"]; // Words to auto-remove
-const authPath = "./auth_info"; // Keep inside bot folder for permissions
+const authPath = "./auth_info"; // Folder to store session files
 
-const scheduledTagalls = []; // { groupId, time }
+// Create folder if missing
+if (!fs.existsSync(authPath)) fs.mkdirSync(authPath, { recursive: true });
+
+// On Render: write session from ENV if it exists
+if (process.env.WA_SESSION) {
+  fs.writeFileSync(`${authPath}/session.json`, process.env.WA_SESSION);
+}
+
+const scheduledTagalls = []; // { groupId, time, msg? }
 
 // ===== START BOT =====
 async function startBot() {
@@ -20,25 +28,22 @@ async function startBot() {
 
   const sock = makeWASocket({
     auth: state,
-    logger: Pino({ level: "warn" }),
+    logger: Pino({ level: "warn" })
   });
 
   sock.ev.on("creds.update", saveCreds);
 
   sock.ev.on("connection.update", ({ connection, lastDisconnect, qr }) => {
     if (qr) qrcode.generate(qr, { small: true });
-
     if (connection === "open") console.log("✅ WhatsApp connected");
-
     if (connection === "close") {
       const reason = lastDisconnect?.error?.output?.statusCode;
       console.log("❌ Disconnected:", reason);
-
       if (reason !== DisconnectReason.loggedOut) {
         console.log("🔁 Reconnecting...");
         startBot();
       } else {
-        console.log("❌ Logged out. Delete auth_info to scan QR again.");
+        console.log("❌ Logged out. Delete auth_info and scan again.");
       }
     }
   });
@@ -60,7 +65,7 @@ async function startBot() {
       isAdmin = meta.participants.some(p => p.id === sender && p.admin);
     }
 
-    // ===== AUTO-REMOVE FORBIDDEN WORDS / SPAM =====
+    // ===== AUTO-REMOVE FORBIDDEN WORDS =====
     if (isGroup && !msg.key.fromMe) {
       for (const word of forbiddenWords) {
         if (text.toLowerCase().includes(word)) {
@@ -106,8 +111,8 @@ async function startBot() {
       // INFO
       if (text === "!info") {
         let info = `👥 Group: ${meta.subject}\n🆔 ID: ${meta.id}\n👑 Admins:\n`;
-        meta.participants.filter(p => p.admin).forEach(a => {
-          info += `- @${a.id.split("@")[0]}\n`;
+        meta.participants.filter(p => p.admin).forEach(p => {
+          info += `- @${p.id.split("@")[0]}\n`;
         });
         await sock.sendMessage(from, { text: info, mentions: meta.participants.filter(p => p.admin).map(p => p.id) });
       }
@@ -146,7 +151,7 @@ async function startBot() {
       }
     }
 
-    // ===== DM AUTO-REPLY =====
+    // ===== DM REPLY =====
     if (!isGroup) {
       await sock.sendMessage(from, { text: "📩 Auto-reply: I'm currently in a group. Admins only can send commands." });
     }
@@ -163,7 +168,7 @@ async function startBot() {
         await sock.sendMessage(task.groupId, { text: msgText, mentions: meta.participants.map(p => p.id) });
       }
     }
-  }, 60_000); // Check every minute
+  }, 60_000); // Check every 1 minute
 }
 
 startBot();
